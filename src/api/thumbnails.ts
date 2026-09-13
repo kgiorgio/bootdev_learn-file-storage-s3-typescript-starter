@@ -4,6 +4,7 @@ import { getVideo, updateVideo } from "../db/videos";
 import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
+import path from "path";
 
 export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -35,11 +36,13 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 
   const thumbnailData = await thumbnail.arrayBuffer();
   const thumbnailMediaType = thumbnail.type;
-
-  const thumbnailBuffer = Buffer.from(thumbnailData);
-  const thumbnailBase64 = thumbnailBuffer.toString("base64");
-
-  video.thumbnailURL = `data:${thumbnailMediaType};base64,${thumbnailBase64}`;
+  const thumbnailExtension = thumbnailMediaType.split("/")[1];
+  if (!thumbnailExtension) {
+    throw new BadRequestError("Empty thumbnail extension");
+  }
+  const assetPath = path.join(cfg.assetsRoot, `${videoId}.${thumbnailExtension}`);
+  await Bun.write(assetPath, thumbnailData);
+  video.thumbnailURL = `http://localhost:${cfg.port}/assets/${videoId}.${thumbnailExtension}`;
 
   updateVideo(cfg.db, video);
 
