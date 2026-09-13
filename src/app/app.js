@@ -266,7 +266,8 @@ function viewVideo(video) {
     thumbnailImg.style.display = "none";
   } else {
     thumbnailImg.style.display = "block";
-    thumbnailImg.src = video.thumbnailURL;
+    const TIME = new Date().getTime();
+    thumbnailImg.src = `${video.thumbnailURL}?V=${TIME}`;
   }
 
   const videoPlayer = document.getElementById("video-player");
