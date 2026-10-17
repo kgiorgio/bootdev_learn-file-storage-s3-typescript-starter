@@ -40,11 +40,13 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
     throw new BadRequestError("Invalid video file type");
   }
 
-  const key = `${videoId}.mp4`;
-  const tempFilePath = path.join("/tmp", key);
+  const tempFilePath = path.join("/tmp", `${videoId}.mp4`);
   await Bun.write(tempFilePath, videoFile);
 
   try {
+    const aspectRatio = await getVideoAspectRatio(tempFilePath);
+    const key = `${aspectRatio}/${videoId}.mp4`;
+
     const s3file = cfg.s3Client.file(key, { type: videoFile.type });
     await s3file.write(Bun.file(tempFilePath));
 
@@ -55,4 +57,50 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   }
 
   return respondWithJSON(200, video);
+}
+
+export async function getVideoAspectRatio(filePath: string): Promise<string> {
+  const proc = Bun.spawn(
+    [
+      "ffprobe",
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "json",
+      filePath,
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+
+  const stdoutText = await new Response(proc.stdout).text();
+  const stderrText = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`ffprobe failed: ${stderrText}`);
+  }
+
+  const parsed = JSON.parse(stdoutText) as {
+    streams?: Array<{ width?: number; height?: number }>;
+  };
+  const width = parsed.streams?.[0]?.width;
+  const height = parsed.streams?.[0]?.height;
+  if (!width || !height) {
+    throw new Error("Could not determine video dimensions");
+  }
+
+  const ratio = width / height;
+  if (Math.abs(ratio - 16 / 9) < 0.1) {
+    return "landscape";
+  }
+  if (Math.abs(ratio - 9 / 16) < 0.1) {
+    return "portrait";
+  }
+  return "other";
 }
